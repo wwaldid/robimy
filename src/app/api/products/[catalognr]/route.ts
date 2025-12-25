@@ -1,0 +1,26 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getProductByCatalog } from '@/lib/db';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { catalognr: string } }
+) {
+  try {
+    const product = getProductByCatalog(params.catalognr);
+
+    if (!product) {
+      return NextResponse.json(
+        { error: 'Produkt nie został znaleziony' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(product);
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    return NextResponse.json(
+      { error: 'Błąd serwera' },
+      { status: 500 }
+    );
+  }
+}
