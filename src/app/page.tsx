@@ -3,9 +3,9 @@ import ProductCard from '@/components/ProductCard';
 import SearchHero from '@/components/SearchHero';
 import Link from 'next/link';
 
-export default function HomePage() {
-  const featuredProducts = getProductGroups(12);
-  const categories = getCategories();
+export default async function HomePage() {
+  const featuredProducts = await getProductGroups(12);
+  const categories = await getCategories();
 
   return (
     <div>

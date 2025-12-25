@@ -35,6 +35,15 @@ async function downloadDatabase() {
   console.log('Database downloaded successfully');
 }
 
+async function ensureDatabase() {
+  if (downloadPromise) {
+    await downloadPromise;
+  }
+  if (!fs.existsSync(dbPath)) {
+    await downloadDatabase();
+  }
+}
+
 function getDb() {
   if (!db) {
     // Check if database exists, if not throw error with helpful message
@@ -53,7 +62,8 @@ if (typeof window === 'undefined') {
   });
 }
 
-export function getProductGroups(limit = 20, offset = 0): ProductGroup[] {
+export async function getProductGroups(limit = 20, offset = 0): Promise<ProductGroup[]> {
+  await ensureDatabase();
   const database = getDb();
 
   const query = `
@@ -144,7 +154,8 @@ export function getProductByCatalog(catalognr: string): ProductGroup | null {
   };
 }
 
-export function searchProducts(filters: FilterOptions, limit = 20, offset = 0): ProductGroup[] {
+export async function searchProducts(filters: FilterOptions, limit = 20, offset = 0): Promise<ProductGroup[]> {
+  await ensureDatabase();
   const database = getDb();
 
   let query = `
@@ -206,7 +217,8 @@ export function searchProducts(filters: FilterOptions, limit = 20, offset = 0): 
   });
 }
 
-export function getCategories(filters?: Partial<FilterOptions>): string[] {
+export async function getCategories(filters?: Partial<FilterOptions>): Promise<string[]> {
+  await ensureDatabase();
   const database = getDb();
 
   let query = `
@@ -247,7 +259,8 @@ export function getCategories(filters?: Partial<FilterOptions>): string[] {
   return rows.map((row) => row.maincategory);
 }
 
-export function getBrands(filters?: Partial<FilterOptions>): string[] {
+export async function getBrands(filters?: Partial<FilterOptions>): Promise<string[]> {
+  await ensureDatabase();
   const database = getDb();
 
   let query = `
@@ -288,7 +301,8 @@ export function getBrands(filters?: Partial<FilterOptions>): string[] {
   return rows.map((row) => row.brand);
 }
 
-export function getColors(filters?: Partial<FilterOptions>): string[] {
+export async function getColors(filters?: Partial<FilterOptions>): Promise<string[]> {
+  await ensureDatabase();
   const database = getDb();
 
   let baseWhere = 'discontinued = 0';
@@ -331,7 +345,8 @@ export function getColors(filters?: Partial<FilterOptions>): string[] {
   return rows.map((row) => row.color);
 }
 
-export function getSizes(filters?: Partial<FilterOptions>): string[] {
+export async function getSizes(filters?: Partial<FilterOptions>): Promise<string[]> {
+  await ensureDatabase();
   const database = getDb();
 
   let query = `

@@ -32,31 +32,31 @@ export default async function ProductsPage({
     sizes: params.sizes?.split(',').filter(Boolean),
   };
 
-  const products = searchProducts(filters, 100);
+  const products = await searchProducts(filters, 100);
 
   // Get filtered options based on active filters
-  const categories = getCategories({
+  const categories = await getCategories({
     search: filters.search,
     brands: filters.brands,
     colors: filters.colors,
     sizes: filters.sizes,
   });
 
-  const brands = getBrands({
+  const brands = await getBrands({
     search: filters.search,
     categories: filters.categories,
     colors: filters.colors,
     sizes: filters.sizes,
   });
 
-  const colors = getColors({
+  const colors = await getColors({
     search: filters.search,
     categories: filters.categories,
     brands: filters.brands,
     sizes: filters.sizes,
   });
 
-  const sizes = getSizes({
+  const sizes = await getSizes({
     search: filters.search,
     categories: filters.categories,
     brands: filters.brands,
