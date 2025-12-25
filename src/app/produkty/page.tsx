@@ -17,17 +17,19 @@ interface SearchParams {
   sizes?: string;
 }
 
-export default function ProductsPage({
+export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
+  const params = await searchParams;
+
   const filters: FilterOptions = {
-    search: searchParams.search,
-    categories: searchParams.categories?.split(',').filter(Boolean),
-    brands: searchParams.brands?.split(',').filter(Boolean),
-    colors: searchParams.colors?.split(',').filter(Boolean),
-    sizes: searchParams.sizes?.split(',').filter(Boolean),
+    search: params.search,
+    categories: params.categories?.split(',').filter(Boolean),
+    brands: params.brands?.split(',').filter(Boolean),
+    colors: params.colors?.split(',').filter(Boolean),
+    sizes: params.sizes?.split(',').filter(Boolean),
   };
 
   const products = searchProducts(filters, 100);

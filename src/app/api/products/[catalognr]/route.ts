@@ -3,10 +3,11 @@ import { getProductByCatalog } from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { catalognr: string } }
+  { params }: { params: Promise<{ catalognr: string }> }
 ) {
   try {
-    const product = getProductByCatalog(params.catalognr);
+    const { catalognr } = await params;
+    const product = getProductByCatalog(catalognr);
 
     if (!product) {
       return NextResponse.json(
