@@ -23,7 +23,7 @@ export default async function HomePage() {
             {categories.slice(0, 16).map((category) => (
               <Link
                 key={category}
-                href={`/produkty?categories=${encodeURIComponent(category)}`}
+                href={`/produkty/kategoria/${encodeURIComponent(category)}`}
                 className="bg-white py-12 px-6 rounded-lg shadow hover:shadow-lg transition-all text-center border border-gray-100 hover:border-blue-500 flex flex-col items-center justify-center gap-3"
               >
                 <svg className="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

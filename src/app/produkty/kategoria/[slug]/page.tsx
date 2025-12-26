@@ -9,53 +9,56 @@ import ProductFilters from '@/components/ProductFilters';
 import { FilterOptions } from '@/types/product';
 import Link from 'next/link';
 
-// Revalidate every 30 minutes for filtered pages
+// Revalidate every 30 minutes
 export const revalidate = 1800;
 
 interface SearchParams {
-  search?: string;
   brands?: string;
   colors?: string;
   sizes?: string;
 }
 
-export default async function ProductsPage({
-  searchParams,
-}: {
+interface PageProps {
+  params: Promise<{ slug: string }>;
   searchParams: Promise<SearchParams>;
-}) {
-  const params = await searchParams;
+}
+
+export default async function CategoryPage({ params, searchParams }: PageProps) {
+  const { slug } = await params;
+  const searchParamsResolved = await searchParams;
+
+  // Decode URL-encoded category name
+  const category = decodeURIComponent(slug);
 
   const filters: FilterOptions = {
-    search: params.search,
-    brands: params.brands?.split(',').filter(Boolean),
-    colors: params.colors?.split(',').filter(Boolean),
-    sizes: params.sizes?.split(',').filter(Boolean),
+    categories: [category],
+    brands: searchParamsResolved.brands?.split(',').filter(Boolean),
+    colors: searchParamsResolved.colors?.split(',').filter(Boolean),
+    sizes: searchParamsResolved.sizes?.split(',').filter(Boolean),
   };
 
   const products = await searchProducts(filters, 100);
 
-  // Get filtered options based on active filters
+  // Get filtered options based on active filters (excluding category since it's fixed)
   const brands = await getBrands({
-    search: filters.search,
+    categories: [category],
     colors: filters.colors,
     sizes: filters.sizes,
   });
 
   const colors = await getColors({
-    search: filters.search,
+    categories: [category],
     brands: filters.brands,
     sizes: filters.sizes,
   });
 
   const sizes = await getSizes({
-    search: filters.search,
+    categories: [category],
     brands: filters.brands,
     colors: filters.colors,
   });
 
   const hasActiveFilters =
-    filters.search ||
     (filters.brands && filters.brands.length > 0) ||
     (filters.colors && filters.colors.length > 0) ||
     (filters.sizes && filters.sizes.length > 0);
@@ -68,14 +71,14 @@ export default async function ProductsPage({
           Strona główna
         </Link>
         {' / '}
-        <span className="text-gray-600">
-          {filters.search ? `Wyszukiwanie: "${filters.search}"` : 'Wszystkie produkty'}
-        </span>
+        <Link href="/produkty" className="text-blue-600 hover:text-blue-800">
+          Produkty
+        </Link>
+        {' / '}
+        <span className="text-gray-600">{category}</span>
       </nav>
 
-      <h1 className="text-4xl font-bold mb-8">
-        {filters.search ? `Wyniki wyszukiwania: "${filters.search}"` : 'Wszystkie produkty'}
-      </h1>
+      <h1 className="text-4xl font-bold mb-8">{category}</h1>
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Filters Sidebar */}
