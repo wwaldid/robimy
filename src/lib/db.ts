@@ -40,19 +40,19 @@ export async function getProductGroups(limit = 20, offset = 0): Promise<ProductG
 
   // Convert Row objects to plain objects
   const products = result.rows.map(row => ({
-    catalognr: row.catalognr,
-    brand: row.brand,
-    description: row.description,
-    longdescription: row.longdescription,
-    picturename: row.picturename,
-    maincategory: row.maincategory,
-    subcategory: row.subcategory,
-    material: row.material,
+    catalognr: String(row.catalognr),
+    brand: String(row.brand),
+    description: String(row.description),
+    longdescription: String(row.longdescription),
+    picturename: String(row.picturename),
+    maincategory: String(row.maincategory),
+    subcategory: String(row.subcategory),
+    material: String(row.material),
   }));
 
   const productGroups = await Promise.all(
     products.map(async (product) => {
-      const variants = await getProductVariants(product.catalognr as string);
+      const variants = await getProductVariants(product.catalognr);
       return {
         ...product,
         variants,
@@ -82,10 +82,10 @@ export async function getProductVariants(catalognr: string) {
 
   // Convert Row objects to plain objects
   return result.rows.map(row => ({
-    id: row.id,
-    color: row.color,
-    hexColor: row.hexColor,
-    size: row.size,
+    id: Number(row.id),
+    color: String(row.color),
+    hexColor: String(row.hexColor),
+    size: String(row.size),
   }));
 }
 
@@ -157,17 +157,17 @@ export async function getProductByCatalog(catalognr: string): Promise<ProductGro
 
   // Convert Row object to plain object
   return {
-    catalognr: row.catalognr,
-    brand: row.brand,
-    description: row.description,
-    longdescription: row.longdescription,
-    picturename: row.picturename,
-    maincategory: row.maincategory,
-    subcategory: row.subcategory,
-    material: row.material,
-    grammage: row.grammage,
-    careinstruction: row.careinstruction,
-    collections: row.collections,
+    catalognr: String(row.catalognr),
+    brand: String(row.brand),
+    description: String(row.description),
+    longdescription: String(row.longdescription),
+    picturename: String(row.picturename),
+    maincategory: String(row.maincategory),
+    subcategory: String(row.subcategory),
+    material: String(row.material),
+    grammage: row.grammage ? String(row.grammage) : undefined,
+    careinstruction: row.careinstruction ? String(row.careinstruction) : undefined,
+    collections: row.collections ? String(row.collections) : undefined,
     variants,
   } as unknown as ProductGroup;
 }
