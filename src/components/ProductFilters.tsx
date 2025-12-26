@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 interface ProductFiltersProps {
@@ -18,6 +18,7 @@ export default function ProductFilters({
 }: ProductFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
@@ -33,19 +34,25 @@ export default function ProductFilters({
     searchParams.get('sizes')?.split(',').filter(Boolean) || []
   );
 
-  // Auto-apply filters when selections change
+  // Auto-apply filters when selections change (with debounce for search)
   useEffect(() => {
-    const params = new URLSearchParams();
+    const timeoutId = setTimeout(() => {
+      const params = new URLSearchParams();
 
-    if (search) params.set('search', search);
-    if (selectedCategories.length > 0)
-      params.set('categories', selectedCategories.join(','));
-    if (selectedBrands.length > 0) params.set('brands', selectedBrands.join(','));
-    if (selectedColors.length > 0) params.set('colors', selectedColors.join(','));
-    if (selectedSizes.length > 0) params.set('sizes', selectedSizes.join(','));
+      if (search) params.set('search', search);
+      if (selectedCategories.length > 0)
+        params.set('categories', selectedCategories.join(','));
+      if (selectedBrands.length > 0) params.set('brands', selectedBrands.join(','));
+      if (selectedColors.length > 0) params.set('colors', selectedColors.join(','));
+      if (selectedSizes.length > 0) params.set('sizes', selectedSizes.join(','));
 
-    router.push(`/produkty?${params.toString()}`);
-  }, [selectedCategories, selectedBrands, selectedColors, selectedSizes, search, router]);
+      startTransition(() => {
+        router.push(`/produkty?${params.toString()}`);
+      });
+    }, search !== searchParams.get('search') ? 500 : 0); // 500ms debounce for search, instant for filters
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedCategories, selectedBrands, selectedColors, selectedSizes, search]);
 
   const applyFilters = () => {
     const params = new URLSearchParams();
@@ -82,12 +89,23 @@ export default function ProductFilters({
   };
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
+    <div className="bg-white p-6 rounded-lg shadow-md relative">
+      {/* Loading overlay */}
+      {isPending && (
+        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-gray-600">Ładowanie...</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">Filtry</h2>
         <button
           onClick={clearFilters}
           className="text-sm text-blue-600 hover:text-blue-800 underline"
+          disabled={isPending}
         >
           Wyczyść
         </button>
@@ -95,13 +113,17 @@ export default function ProductFilters({
 
       {/* Search */}
       <div className="mb-6">
-        <label className="block text-sm font-medium mb-2">Szukaj</label>
+        <label className="block text-sm font-medium mb-2">
+          Szukaj
+          {isPending && <span className="ml-2 text-xs text-blue-600">(szukam...)</span>}
+        </label>
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Wpisz nazwę produktu..."
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={isPending}
         />
       </div>
 
