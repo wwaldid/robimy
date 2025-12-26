@@ -4,13 +4,17 @@ import fs from 'fs';
 import { Product, ProductGroup, FilterOptions } from '@/types/product';
 
 const DB_URL = 'https://studiowaldo.pl/db/products.db';
-const dbPath = path.join(process.cwd(), 'db', 'products.db');
+// Use /tmp directory in serverless environment (Vercel), otherwise use local db folder
+const dbPath = process.env.VERCEL
+  ? '/tmp/products.db'
+  : path.join(process.cwd(), 'db', 'products.db');
 let db: Database.Database | null = null;
 let downloadPromise: Promise<void> | null = null;
 
 async function downloadDatabase() {
   // Check if database already exists locally
   if (fs.existsSync(dbPath)) {
+    console.log('Database already exists at', dbPath);
     return;
   }
 
@@ -19,28 +23,45 @@ async function downloadDatabase() {
   // Create db directory if it doesn't exist
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+    try {
+      fs.mkdirSync(dbDir, { recursive: true });
+    } catch (err) {
+      console.error('Failed to create directory:', err);
+      // Directory might not be writable, continue anyway
+    }
   }
 
-  // Download the database
-  const response = await fetch(DB_URL);
-  if (!response.ok) {
-    throw new Error(`Failed to download database: ${response.statusText}`);
+  try {
+    // Download the database
+    const response = await fetch(DB_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to download database: ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    fs.writeFileSync(dbPath, buffer);
+    console.log('Database downloaded successfully to', dbPath);
+  } catch (err) {
+    console.error('Error downloading database:', err);
+    throw err;
   }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  fs.writeFileSync(dbPath, buffer);
-  console.log('Database downloaded successfully');
 }
 
 async function ensureDatabase() {
-  if (downloadPromise) {
-    await downloadPromise;
-  }
-  if (!fs.existsSync(dbPath)) {
-    await downloadDatabase();
+  try {
+    if (downloadPromise) {
+      console.log('Waiting for existing download promise...');
+      await downloadPromise;
+    }
+    if (!fs.existsSync(dbPath)) {
+      console.log('Database not found, downloading...');
+      await downloadDatabase();
+    }
+  } catch (err) {
+    console.error('Error ensuring database:', err);
+    throw err;
   }
 }
 
@@ -48,8 +69,10 @@ function getDb() {
   if (!db) {
     // Check if database exists, if not throw error with helpful message
     if (!fs.existsSync(dbPath)) {
-      throw new Error('Database not found. Please ensure the database is downloaded first.');
+      console.error('Database file not found at:', dbPath);
+      throw new Error(`Database not found at ${dbPath}. Please ensure the database is downloaded first.`);
     }
+    console.log('Opening database at:', dbPath);
     db = new Database(dbPath, { readonly: true });
   }
   return db;
