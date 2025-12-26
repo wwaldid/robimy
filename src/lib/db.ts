@@ -1,10 +1,17 @@
 import { createClient } from '@libsql/client';
 import { Product, ProductGroup, FilterOptions } from '@/types/product';
 
+// Validate environment variables
+if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+  throw new Error(
+    'Missing Turso environment variables. Please set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in your Vercel project settings.'
+  );
+}
+
 // Create Turso client
 const client = createClient({
-  url: process.env.TURSO_DATABASE_URL!,
-  authToken: process.env.TURSO_AUTH_TOKEN!,
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
 export async function getProductGroups(limit = 20, offset = 0): Promise<ProductGroup[]> {

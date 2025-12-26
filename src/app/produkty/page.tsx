@@ -9,6 +9,9 @@ import ProductCard from '@/components/ProductCard';
 import ProductFilters from '@/components/ProductFilters';
 import { FilterOptions } from '@/types/product';
 
+// Revalidate every 30 minutes for filtered pages
+export const revalidate = 1800;
+
 interface SearchParams {
   search?: string;
   categories?: string;

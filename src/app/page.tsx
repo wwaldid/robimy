@@ -3,6 +3,9 @@ import ProductCard from '@/components/ProductCard';
 import SearchHero from '@/components/SearchHero';
 import Link from 'next/link';
 
+// Revalidate every 1 hour
+export const revalidate = 3600;
+
 export default async function HomePage() {
   const featuredProducts = await getProductGroups(12);
   const categories = await getCategories();
