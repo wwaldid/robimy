@@ -37,26 +37,25 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
     sizes: searchParamsResolved.sizes?.split(',').filter(Boolean),
   };
 
-  const products = await searchProducts(filters, 100);
-
-  // Get filtered options based on active filters (excluding category since it's fixed)
-  const brands = await getBrands({
-    categories: [category],
-    colors: filters.colors,
-    sizes: filters.sizes,
-  });
-
-  const colors = await getColors({
-    categories: [category],
-    brands: filters.brands,
-    sizes: filters.sizes,
-  });
-
-  const sizes = await getSizes({
-    categories: [category],
-    brands: filters.brands,
-    colors: filters.colors,
-  });
+  // Run all queries in parallel for better performance
+  const [products, brands, colors, sizes] = await Promise.all([
+    searchProducts(filters, 100),
+    getBrands({
+      categories: [category],
+      colors: filters.colors,
+      sizes: filters.sizes,
+    }),
+    getColors({
+      categories: [category],
+      brands: filters.brands,
+      sizes: filters.sizes,
+    }),
+    getSizes({
+      categories: [category],
+      brands: filters.brands,
+      colors: filters.colors,
+    }),
+  ]);
 
   const hasActiveFilters =
     (filters.brands && filters.brands.length > 0) ||
@@ -68,10 +67,6 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
       {/* Breadcrumbs */}
       <nav className="text-sm mb-6">
         <Link href="/" className="text-blue-600 hover:text-blue-800">
-          Strona główna
-        </Link>
-        {' / '}
-        <Link href="/produkty" className="text-blue-600 hover:text-blue-800">
           Produkty
         </Link>
         {' / '}

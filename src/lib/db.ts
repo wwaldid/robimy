@@ -1,5 +1,6 @@
 import { createClient } from '@libsql/client';
 import { Product, ProductGroup, FilterOptions } from '@/types/product';
+import { unstable_cache } from 'next/cache';
 
 // Validate environment variables
 if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
@@ -37,7 +38,17 @@ export async function getProductGroups(limit = 20, offset = 0): Promise<ProductG
     args: [limit, offset]
   });
 
-  const products = result.rows as any[];
+  // Convert Row objects to plain objects
+  const products = result.rows.map(row => ({
+    catalognr: row.catalognr,
+    brand: row.brand,
+    description: row.description,
+    longdescription: row.longdescription,
+    picturename: row.picturename,
+    maincategory: row.maincategory,
+    subcategory: row.subcategory,
+    material: row.material,
+  }));
 
   const productGroups = await Promise.all(
     products.map(async (product) => {
@@ -69,7 +80,13 @@ export async function getProductVariants(catalognr: string) {
     args: [catalognr]
   });
 
-  return result.rows;
+  // Convert Row objects to plain objects
+  return result.rows.map(row => ({
+    id: row.id,
+    color: row.color,
+    hexColor: row.hexColor,
+    size: row.size,
+  }));
 }
 
 export async function getProductById(id: number): Promise<Product | null> {
@@ -80,7 +97,31 @@ export async function getProductById(id: number): Promise<Product | null> {
     args: [id]
   });
 
-  return (result.rows[0] as unknown as Product) || null;
+  if (!result.rows[0]) return null;
+
+  // Convert Row object to plain object
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    catalognr: row.catalognr,
+    brand: row.brand,
+    description: row.description,
+    longdescription: row.longdescription,
+    picturename: row.picturename,
+    maincategory: row.maincategory,
+    subcategory: row.subcategory,
+    material: row.material,
+    color1: row.color1,
+    color2: row.color2,
+    color3: row.color3,
+    color4: row.color4,
+    hexcol1: row.hexcol1,
+    hexcol2: row.hexcol2,
+    hexcol3: row.hexcol3,
+    hexcol4: row.hexcol4,
+    size: row.size,
+    discontinued: row.discontinued,
+  } as unknown as Product;
 }
 
 export async function getProductByCatalog(catalognr: string): Promise<ProductGroup | null> {
@@ -108,65 +149,100 @@ export async function getProductByCatalog(catalognr: string): Promise<ProductGro
     args: [catalognr]
   });
 
-  const product = result.rows[0];
+  const row = result.rows[0];
 
-  if (!product) return null;
+  if (!row) return null;
 
   const variants = await getProductVariants(catalognr);
 
+  // Convert Row object to plain object
   return {
-    ...product,
+    catalognr: row.catalognr,
+    brand: row.brand,
+    description: row.description,
+    longdescription: row.longdescription,
+    picturename: row.picturename,
+    maincategory: row.maincategory,
+    subcategory: row.subcategory,
+    material: row.material,
+    grammage: row.grammage,
+    careinstruction: row.careinstruction,
+    collections: row.collections,
     variants,
   } as unknown as ProductGroup;
 }
 
 export async function searchProducts(filters: FilterOptions, limit = 20, offset = 0): Promise<ProductGroup[]> {
-  let query = `
-    SELECT
-      catalognr,
-      brand,
-      description,
-      longdescription,
-      picturename,
-      maincategory,
-      subcategory,
-      material
-    FROM products
-    WHERE discontinued = 0
-  `;
-
+  // Build WHERE clause for the subquery
+  let whereClause = 'discontinued = 0';
   const args: any[] = [];
 
   if (filters.search) {
-    query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
+    whereClause += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
     const searchTerm = `%${filters.search}%`;
     args.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (filters.categories && filters.categories.length > 0) {
-    query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
+    whereClause += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters.brands && filters.brands.length > 0) {
-    query += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
+    whereClause += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
     args.push(...filters.brands);
   }
 
   if (filters.colors && filters.colors.length > 0) {
-    query += ` AND (color1 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
+    whereClause += ` AND (color1 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
     args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   if (filters.sizes && filters.sizes.length > 0) {
-    query += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
+    whereClause += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
     args.push(...filters.sizes);
   }
 
-  query += ` GROUP BY catalognr ORDER BY catalognr LIMIT ? OFFSET ?`;
+  // Single query with JOIN to get products + variants
+  const query = `
+    SELECT
+      p1.catalognr,
+      p1.brand,
+      p1.description,
+      p1.longdescription,
+      p1.picturename,
+      p1.maincategory,
+      p1.subcategory,
+      p1.material,
+      p2.id as variant_id,
+      p2.color1 as variant_color,
+      p2.hexcol1 as variant_hex_color,
+      p2.size as variant_size
+    FROM (
+      SELECT DISTINCT
+        catalognr,
+        brand,
+        description,
+        longdescription,
+        picturename,
+        maincategory,
+        subcategory,
+        material
+      FROM products
+      WHERE ${whereClause}
+      GROUP BY catalognr
+      ORDER BY catalognr
+      LIMIT ? OFFSET ?
+    ) p1
+    LEFT JOIN products p2
+      ON p1.catalognr = p2.catalognr
+      AND p2.discontinued = 0
+    ORDER BY p1.catalognr, p2.color1, p2.size
+  `;
+
   args.push(limit, offset);
 
   const result = await client.execute({
@@ -174,22 +250,42 @@ export async function searchProducts(filters: FilterOptions, limit = 20, offset 
     args: args
   });
 
-  const products = result.rows as any[];
+  // Transform flat result into ProductGroup structure
+  const productMap = new Map<string, any>();
 
-  const productGroups = await Promise.all(
-    products.map(async (product) => {
-      const variants = await getProductVariants(product.catalognr as string);
-      return {
-        ...product,
-        variants,
-      };
-    })
-  );
+  for (const row of result.rows) {
+    const catalognr = String(row.catalognr);
 
-  return productGroups;
+    if (!productMap.has(catalognr)) {
+      productMap.set(catalognr, {
+        catalognr: String(row.catalognr),
+        brand: String(row.brand),
+        description: String(row.description),
+        longdescription: String(row.longdescription),
+        picturename: String(row.picturename),
+        maincategory: String(row.maincategory),
+        subcategory: String(row.subcategory),
+        material: String(row.material),
+        variants: [],
+      });
+    }
+
+    const productGroup = productMap.get(catalognr)!;
+    if (row.variant_id) {
+      productGroup.variants.push({
+        id: Number(row.variant_id),
+        color: String(row.variant_color),
+        hexColor: String(row.variant_hex_color),
+        size: String(row.variant_size),
+      });
+    }
+  }
+
+  return Array.from(productMap.values()) as ProductGroup[];
 }
 
-export async function getCategories(filters?: Partial<FilterOptions>): Promise<string[]> {
+// Internal function without cache
+async function getCategoriesInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
   let query = `
     SELECT DISTINCT maincategory
     FROM products
@@ -229,7 +325,29 @@ export async function getCategories(filters?: Partial<FilterOptions>): Promise<s
     args: args
   });
 
-  return result.rows.map((row: any) => row.maincategory as string);
+  // Convert Row objects to plain objects and extract values
+  return result.rows.map((row) => String(row.maincategory));
+}
+
+// Cached version for homepage (no filters)
+const getCategoriesCached = unstable_cache(
+  async () => getCategoriesInternal(),
+  ['all-categories'],
+  {
+    revalidate: 3600, // 1 hour
+    tags: ['categories'],
+  }
+);
+
+// Export function that uses cache when no filters, otherwise queries directly
+export async function getCategories(filters?: Partial<FilterOptions>): Promise<string[]> {
+  // If no filters, use cached version
+  if (!filters || Object.keys(filters).length === 0) {
+    return getCategoriesCached();
+  }
+
+  // Otherwise query directly with filters
+  return getCategoriesInternal(filters);
 }
 
 export async function getBrands(filters?: Partial<FilterOptions>): Promise<string[]> {
@@ -272,7 +390,8 @@ export async function getBrands(filters?: Partial<FilterOptions>): Promise<strin
     args: args
   });
 
-  return result.rows.map((row: any) => row.brand as string);
+  // Convert Row objects to plain objects and extract values
+  return result.rows.map((row) => String(row.brand));
 }
 
 export async function getColors(filters?: Partial<FilterOptions>): Promise<string[]> {
@@ -318,7 +437,8 @@ export async function getColors(filters?: Partial<FilterOptions>): Promise<strin
     args: allArgs
   });
 
-  return result.rows.map((row: any) => row.color as string);
+  // Convert Row objects to plain objects and extract values
+  return result.rows.map((row) => String(row.color));
 }
 
 export async function getSizes(filters?: Partial<FilterOptions>): Promise<string[]> {
@@ -361,5 +481,6 @@ export async function getSizes(filters?: Partial<FilterOptions>): Promise<string
     args: args
   });
 
-  return result.rows.map((row: any) => row.size as string);
+  // Convert Row objects to plain objects and extract values
+  return result.rows.map((row) => String(row.size));
 }

@@ -33,26 +33,25 @@ export default async function ProductsPage({
     sizes: params.sizes?.split(',').filter(Boolean),
   };
 
-  const products = await searchProducts(filters, 100);
-
-  // Get filtered options based on active filters
-  const brands = await getBrands({
-    search: filters.search,
-    colors: filters.colors,
-    sizes: filters.sizes,
-  });
-
-  const colors = await getColors({
-    search: filters.search,
-    brands: filters.brands,
-    sizes: filters.sizes,
-  });
-
-  const sizes = await getSizes({
-    search: filters.search,
-    brands: filters.brands,
-    colors: filters.colors,
-  });
+  // Run all queries in parallel for better performance
+  const [products, brands, colors, sizes] = await Promise.all([
+    searchProducts(filters, 100),
+    getBrands({
+      search: filters.search,
+      colors: filters.colors,
+      sizes: filters.sizes,
+    }),
+    getColors({
+      search: filters.search,
+      brands: filters.brands,
+      sizes: filters.sizes,
+    }),
+    getSizes({
+      search: filters.search,
+      brands: filters.brands,
+      colors: filters.colors,
+    }),
+  ]);
 
   const hasActiveFilters =
     filters.search ||
@@ -65,7 +64,7 @@ export default async function ProductsPage({
       {/* Breadcrumbs */}
       <nav className="text-sm mb-6">
         <Link href="/" className="text-blue-600 hover:text-blue-800">
-          Strona główna
+          Produkty
         </Link>
         {' / '}
         <span className="text-gray-600">

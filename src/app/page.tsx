@@ -1,5 +1,4 @@
-import { getProductGroups, getCategories } from '@/lib/db';
-import ProductCard from '@/components/ProductCard';
+import { getCategories } from '@/lib/db';
 import SearchHero from '@/components/SearchHero';
 import Link from 'next/link';
 
@@ -7,7 +6,6 @@ import Link from 'next/link';
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const featuredProducts = await getProductGroups(12);
   const categories = await getCategories();
 
   return (
@@ -31,27 +29,6 @@ export default async function HomePage() {
                 </svg>
                 <div className="font-medium text-gray-800">{category}</div>
               </Link>
-            ))}
-          </div>
-        </section>
-
-        {/* Featured Products */}
-        <section>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-bold text-gray-900">Polecane produkty</h2>
-            <Link
-              href="/produkty"
-              className="text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-2"
-            >
-              Zobacz wszystkie
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {featuredProducts.map((product) => (
-              <ProductCard key={product.catalognr} product={product} />
             ))}
           </div>
         </section>
