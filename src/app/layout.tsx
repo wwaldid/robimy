@@ -31,9 +31,6 @@ export default function RootLayout({
               </a>
               <nav className="flex gap-8 text-gray-700">
                 <a href="/" className="hover:text-blue-600 transition-colors font-medium">
-                  Strona główna
-                </a>
-                <a href="/produkty" className="hover:text-blue-600 transition-colors font-medium">
                   Produkty
                 </a>
               </nav>
