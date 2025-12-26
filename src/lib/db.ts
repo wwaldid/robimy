@@ -1,94 +1,13 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { createClient } from '@libsql/client';
 import { Product, ProductGroup, FilterOptions } from '@/types/product';
 
-const DB_URL = 'https://studiowaldo.pl/db/products.db';
-// Use /tmp directory in serverless environment (Vercel), otherwise use local db folder
-const dbPath = process.env.VERCEL
-  ? '/tmp/products.db'
-  : path.join(process.cwd(), 'db', 'products.db');
-let db: Database.Database | null = null;
-let downloadPromise: Promise<void> | null = null;
-
-async function downloadDatabase() {
-  // Check if database already exists locally
-  if (fs.existsSync(dbPath)) {
-    console.log('Database already exists at', dbPath);
-    return;
-  }
-
-  console.log('Downloading database from', DB_URL);
-
-  // Create db directory if it doesn't exist
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) {
-    try {
-      fs.mkdirSync(dbDir, { recursive: true });
-    } catch (err) {
-      console.error('Failed to create directory:', err);
-      // Directory might not be writable, continue anyway
-    }
-  }
-
-  try {
-    // Download the database
-    const response = await fetch(DB_URL);
-    if (!response.ok) {
-      throw new Error(`Failed to download database: ${response.statusText}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    fs.writeFileSync(dbPath, buffer);
-    console.log('Database downloaded successfully to', dbPath);
-  } catch (err) {
-    console.error('Error downloading database:', err);
-    throw err;
-  }
-}
-
-async function ensureDatabase() {
-  try {
-    if (downloadPromise) {
-      console.log('Waiting for existing download promise...');
-      await downloadPromise;
-    }
-    if (!fs.existsSync(dbPath)) {
-      console.log('Database not found, downloading...');
-      await downloadDatabase();
-    }
-  } catch (err) {
-    console.error('Error ensuring database:', err);
-    throw err;
-  }
-}
-
-function getDb() {
-  if (!db) {
-    // Check if database exists, if not throw error with helpful message
-    if (!fs.existsSync(dbPath)) {
-      console.error('Database file not found at:', dbPath);
-      throw new Error(`Database not found at ${dbPath}. Please ensure the database is downloaded first.`);
-    }
-    console.log('Opening database at:', dbPath);
-    db = new Database(dbPath, { readonly: true });
-  }
-  return db;
-}
-
-// Initialize database download on module load
-if (typeof window === 'undefined') {
-  downloadPromise = downloadDatabase().catch(err => {
-    console.error('Failed to download database:', err);
-  });
-}
+// Create Turso client
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN!,
+});
 
 export async function getProductGroups(limit = 20, offset = 0): Promise<ProductGroup[]> {
-  await ensureDatabase();
-  const database = getDb();
-
   const query = `
     SELECT
       catalognr,
@@ -106,20 +25,27 @@ export async function getProductGroups(limit = 20, offset = 0): Promise<ProductG
     LIMIT ? OFFSET ?
   `;
 
-  const products = database.prepare(query).all(limit, offset) as any[];
-
-  return products.map((product) => {
-    const variants = getProductVariants(product.catalognr);
-    return {
-      ...product,
-      variants,
-    };
+  const result = await client.execute({
+    sql: query,
+    args: [limit, offset]
   });
+
+  const products = result.rows as any[];
+
+  const productGroups = await Promise.all(
+    products.map(async (product) => {
+      const variants = await getProductVariants(product.catalognr as string);
+      return {
+        ...product,
+        variants,
+      };
+    })
+  );
+
+  return productGroups;
 }
 
-export function getProductVariants(catalognr: string) {
-  const database = getDb();
-
+export async function getProductVariants(catalognr: string) {
   const query = `
     SELECT
       id,
@@ -131,22 +57,26 @@ export function getProductVariants(catalognr: string) {
     ORDER BY color1, size
   `;
 
-  return database.prepare(query).all(catalognr);
+  const result = await client.execute({
+    sql: query,
+    args: [catalognr]
+  });
+
+  return result.rows;
 }
 
-export function getProductById(id: number): Product | null {
-  const database = getDb();
-
+export async function getProductById(id: number): Promise<Product | null> {
   const query = `SELECT * FROM products WHERE id = ? AND discontinued = 0`;
-  const product = database.prepare(query).get(id) as Product | undefined;
 
-  return product || null;
+  const result = await client.execute({
+    sql: query,
+    args: [id]
+  });
+
+  return (result.rows[0] as unknown as Product) || null;
 }
 
 export async function getProductByCatalog(catalognr: string): Promise<ProductGroup | null> {
-  await ensureDatabase();
-  const database = getDb();
-
   const query = `
     SELECT
       catalognr,
@@ -166,22 +96,24 @@ export async function getProductByCatalog(catalognr: string): Promise<ProductGro
     LIMIT 1
   `;
 
-  const product = database.prepare(query).get(catalognr) as any;
+  const result = await client.execute({
+    sql: query,
+    args: [catalognr]
+  });
+
+  const product = result.rows[0];
 
   if (!product) return null;
 
-  const variants = getProductVariants(catalognr);
+  const variants = await getProductVariants(catalognr);
 
   return {
     ...product,
     variants,
-  };
+  } as unknown as ProductGroup;
 }
 
 export async function searchProducts(filters: FilterOptions, limit = 20, offset = 0): Promise<ProductGroup[]> {
-  await ensureDatabase();
-  const database = getDb();
-
   let query = `
     SELECT
       catalognr,
@@ -196,22 +128,22 @@ export async function searchProducts(filters: FilterOptions, limit = 20, offset 
     WHERE discontinued = 0
   `;
 
-  const params: any[] = [];
+  const args: any[] = [];
 
   if (filters.search) {
     query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
     const searchTerm = `%${filters.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
+    args.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (filters.categories && filters.categories.length > 0) {
     query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
-    params.push(...filters.categories);
+    args.push(...filters.categories);
   }
 
   if (filters.brands && filters.brands.length > 0) {
     query += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
-    params.push(...filters.brands);
+    args.push(...filters.brands);
   }
 
   if (filters.colors && filters.colors.length > 0) {
@@ -219,49 +151,55 @@ export async function searchProducts(filters: FilterOptions, limit = 20, offset 
     query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
-    params.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
+    args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   if (filters.sizes && filters.sizes.length > 0) {
     query += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
-    params.push(...filters.sizes);
+    args.push(...filters.sizes);
   }
 
   query += ` GROUP BY catalognr ORDER BY catalognr LIMIT ? OFFSET ?`;
-  params.push(limit, offset);
+  args.push(limit, offset);
 
-  const products = database.prepare(query).all(...params) as any[];
-
-  return products.map((product) => {
-    const variants = getProductVariants(product.catalognr);
-    return {
-      ...product,
-      variants,
-    };
+  const result = await client.execute({
+    sql: query,
+    args: args
   });
+
+  const products = result.rows as any[];
+
+  const productGroups = await Promise.all(
+    products.map(async (product) => {
+      const variants = await getProductVariants(product.catalognr as string);
+      return {
+        ...product,
+        variants,
+      };
+    })
+  );
+
+  return productGroups;
 }
 
 export async function getCategories(filters?: Partial<FilterOptions>): Promise<string[]> {
-  await ensureDatabase();
-  const database = getDb();
-
   let query = `
     SELECT DISTINCT maincategory
     FROM products
     WHERE maincategory IS NOT NULL AND maincategory != '' AND discontinued = 0
   `;
 
-  const params: any[] = [];
+  const args: any[] = [];
 
   if (filters?.search) {
     query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
     const searchTerm = `%${filters.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
+    args.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
     query += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
-    params.push(...filters.brands);
+    args.push(...filters.brands);
   }
 
   if (filters?.colors && filters.colors.length > 0) {
@@ -269,41 +207,42 @@ export async function getCategories(filters?: Partial<FilterOptions>): Promise<s
     query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
-    params.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
+    args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   if (filters?.sizes && filters.sizes.length > 0) {
     query += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
-    params.push(...filters.sizes);
+    args.push(...filters.sizes);
   }
 
   query += ` ORDER BY maincategory`;
 
-  const rows = database.prepare(query).all(...params) as { maincategory: string }[];
-  return rows.map((row) => row.maincategory);
+  const result = await client.execute({
+    sql: query,
+    args: args
+  });
+
+  return result.rows.map((row: any) => row.maincategory as string);
 }
 
 export async function getBrands(filters?: Partial<FilterOptions>): Promise<string[]> {
-  await ensureDatabase();
-  const database = getDb();
-
   let query = `
     SELECT DISTINCT brand
     FROM products
     WHERE brand IS NOT NULL AND brand != '' AND discontinued = 0
   `;
 
-  const params: any[] = [];
+  const args: any[] = [];
 
   if (filters?.search) {
     query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
     const searchTerm = `%${filters.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
+    args.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (filters?.categories && filters.categories.length > 0) {
     query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
-    params.push(...filters.categories);
+    args.push(...filters.categories);
   }
 
   if (filters?.colors && filters.colors.length > 0) {
@@ -311,46 +250,47 @@ export async function getBrands(filters?: Partial<FilterOptions>): Promise<strin
     query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
-    params.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
+    args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   if (filters?.sizes && filters.sizes.length > 0) {
     query += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
-    params.push(...filters.sizes);
+    args.push(...filters.sizes);
   }
 
   query += ` ORDER BY brand`;
 
-  const rows = database.prepare(query).all(...params) as { brand: string }[];
-  return rows.map((row) => row.brand);
+  const result = await client.execute({
+    sql: query,
+    args: args
+  });
+
+  return result.rows.map((row: any) => row.brand as string);
 }
 
 export async function getColors(filters?: Partial<FilterOptions>): Promise<string[]> {
-  await ensureDatabase();
-  const database = getDb();
-
   let baseWhere = 'discontinued = 0';
-  const params: any[] = [];
+  const args: any[] = [];
 
   if (filters?.search) {
     baseWhere += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
     const searchTerm = `%${filters.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
+    args.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (filters?.categories && filters.categories.length > 0) {
     baseWhere += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
-    params.push(...filters.categories);
+    args.push(...filters.categories);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
     baseWhere += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
-    params.push(...filters.brands);
+    args.push(...filters.brands);
   }
 
   if (filters?.sizes && filters.sizes.length > 0) {
     baseWhere += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
-    params.push(...filters.sizes);
+    args.push(...filters.sizes);
   }
 
   const query = `
@@ -364,37 +304,39 @@ export async function getColors(filters?: Partial<FilterOptions>): Promise<strin
     ORDER BY color
   `;
 
-  const allParams = [...params, ...params, ...params, ...params];
-  const rows = database.prepare(query).all(...allParams) as { color: string }[];
-  return rows.map((row) => row.color);
+  const allArgs = [...args, ...args, ...args, ...args];
+
+  const result = await client.execute({
+    sql: query,
+    args: allArgs
+  });
+
+  return result.rows.map((row: any) => row.color as string);
 }
 
 export async function getSizes(filters?: Partial<FilterOptions>): Promise<string[]> {
-  await ensureDatabase();
-  const database = getDb();
-
   let query = `
     SELECT DISTINCT size
     FROM products
     WHERE size IS NOT NULL AND size != '' AND discontinued = 0
   `;
 
-  const params: any[] = [];
+  const args: any[] = [];
 
   if (filters?.search) {
     query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
     const searchTerm = `%${filters.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
+    args.push(searchTerm, searchTerm, searchTerm);
   }
 
   if (filters?.categories && filters.categories.length > 0) {
     query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
-    params.push(...filters.categories);
+    args.push(...filters.categories);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
     query += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
-    params.push(...filters.brands);
+    args.push(...filters.brands);
   }
 
   if (filters?.colors && filters.colors.length > 0) {
@@ -402,11 +344,15 @@ export async function getSizes(filters?: Partial<FilterOptions>): Promise<string
     query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
     query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
-    params.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
+    args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   query += ` ORDER BY size`;
 
-  const rows = database.prepare(query).all(...params) as { size: string }[];
-  return rows.map((row) => row.size);
+  const result = await client.execute({
+    sql: query,
+    args: args
+  });
+
+  return result.rows.map((row: any) => row.size as string);
 }
