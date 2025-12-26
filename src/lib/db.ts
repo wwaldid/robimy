@@ -120,7 +120,8 @@ export function getProductById(id: number): Product | null {
   return product || null;
 }
 
-export function getProductByCatalog(catalognr: string): ProductGroup | null {
+export async function getProductByCatalog(catalognr: string): Promise<ProductGroup | null> {
+  await ensureDatabase();
   const database = getDb();
 
   const query = `

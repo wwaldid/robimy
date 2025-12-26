@@ -7,7 +7,7 @@ export async function GET(
 ) {
   try {
     const { catalognr } = await params;
-    const product = getProductByCatalog(catalognr);
+    const product = await getProductByCatalog(catalognr);
 
     if (!product) {
       return NextResponse.json(
