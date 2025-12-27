@@ -1,22 +1,22 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function SearchHero() {
   const [search, setSearch] = useState('');
-  const [isPending, startTransition] = useTransition();
+  const [isSearching, setIsSearching] = useState(false);
   const router = useRouter();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    startTransition(() => {
-      if (search.trim()) {
-        router.push(`/produkty?search=${encodeURIComponent(search.trim())}`);
-      } else {
-        router.push('/produkty');
-      }
-    });
+    setIsSearching(true);
+
+    if (search.trim()) {
+      router.push(`/produkty?search=${encodeURIComponent(search.trim())}`);
+    } else {
+      router.push('/produkty');
+    }
   };
 
   return (
@@ -30,22 +30,22 @@ export default function SearchHero() {
         </p>
 
         <form onSubmit={handleSearch} className="relative">
-          <div className="flex items-center bg-white border-2 border-gray-300 rounded-full shadow-lg hover:shadow-xl transition-shadow focus-within:border-blue-500">
+          <div className="flex items-center bg-white border-2 border-gray-300 shadow-lg hover:shadow-xl transition-shadow focus-within:border-blue-500">
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Czego szukasz? (np. torby, kubki, koszulki...)"
-              className="flex-1 px-6 py-4 text-lg rounded-l-full outline-none"
-              disabled={isPending}
+              className="flex-1 px-6 py-4 text-lg outline-none"
+              disabled={isSearching}
             />
             <button
               type="submit"
-              className="bg-blue-600 text-white px-8 py-4 rounded-r-full hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={isPending}
+              className="bg-blue-600 text-white px-8 py-4 hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSearching}
             >
-              {isPending ? (
-                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              {isSearching ? (
+                <div className="w-6 h-6 border-2 border-white border-t-transparent animate-spin" />
               ) : (
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -53,7 +53,7 @@ export default function SearchHero() {
               )}
             </button>
           </div>
-          {isPending && (
+          {isSearching && (
             <p className="text-sm text-blue-600 mt-2">Szukam produktów...</p>
           )}
         </form>

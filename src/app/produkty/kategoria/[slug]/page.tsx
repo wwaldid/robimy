@@ -1,11 +1,13 @@
 import {
   searchProducts,
+  countProducts,
   getBrands,
   getColors,
   getSizes,
 } from '@/lib/db';
 import ProductCard from '@/components/ProductCard';
 import ProductFilters from '@/components/ProductFilters';
+import PaginationControls from '@/components/PaginationControls';
 import { FilterOptions } from '@/types/product';
 import Link from 'next/link';
 
@@ -16,6 +18,8 @@ interface SearchParams {
   brands?: string;
   colors?: string;
   sizes?: string;
+  page?: string;
+  perPage?: string;
 }
 
 interface PageProps {
@@ -30,6 +34,11 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   // Decode URL-encoded category name
   const category = decodeURIComponent(slug);
 
+  // Pagination parameters
+  const page = parseInt(searchParamsResolved.page || '1', 10);
+  const perPage = parseInt(searchParamsResolved.perPage || '20', 10);
+  const offset = (page - 1) * perPage;
+
   const filters: FilterOptions = {
     categories: [category],
     brands: searchParamsResolved.brands?.split(',').filter(Boolean),
@@ -38,8 +47,9 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   };
 
   // Run all queries in parallel for better performance
-  const [products, brands, colors, sizes] = await Promise.all([
-    searchProducts(filters, 100),
+  const [products, totalCount, brands, colors, sizes] = await Promise.all([
+    searchProducts(filters, perPage, offset),
+    countProducts(filters),
     getBrands({
       categories: [category],
       colors: filters.colors,
@@ -87,26 +97,30 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
 
         {/* Products Grid */}
         <div className="lg:w-3/4">
-          <div className="mb-4 flex justify-between items-center">
-            <p className="text-gray-600">
-              {hasActiveFilters ? (
-                <>
-                  Znaleziono <strong>{products.length}</strong> produktów
-                </>
-              ) : (
-                <>
-                  Wyświetlanie <strong>{products.length}</strong> produktów
-                </>
-              )}
-            </p>
-          </div>
-
           {products.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-              {products.map((product) => (
-                <ProductCard key={product.catalognr} product={product} />
-              ))}
-            </div>
+            <>
+              {/* Pagination controls at top */}
+              <PaginationControls
+                currentPage={page}
+                totalItems={totalCount}
+                itemsPerPage={perPage}
+                position="top"
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                {products.map((product) => (
+                  <ProductCard key={product.catalognr} product={product} />
+                ))}
+              </div>
+
+              {/* Pagination controls at bottom */}
+              <PaginationControls
+                currentPage={page}
+                totalItems={totalCount}
+                itemsPerPage={perPage}
+                position="bottom"
+              />
+            </>
           ) : (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">🔍</div>
@@ -114,7 +128,9 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
                 Nie znaleziono produktów
               </h3>
               <p className="text-gray-600">
-                Spróbuj zmienić kryteria wyszukiwania
+                {hasActiveFilters
+                  ? 'Spróbuj zmienić kryteria wyszukiwania'
+                  : 'Brak produktów w tej kategorii'}
               </p>
             </div>
           )}

@@ -172,48 +172,101 @@ export async function getProductByCatalog(catalognr: string): Promise<ProductGro
   } as unknown as ProductGroup;
 }
 
-export async function searchProducts(filters: FilterOptions, limit = 20, offset = 0): Promise<ProductGroup[]> {
-  // Build WHERE clause for the subquery
-  let whereClause = 'discontinued = 0';
+export async function countProducts(filters: FilterOptions): Promise<number> {
+  // Build WHERE clause
+  let whereClause = 'p.discontinued = 0';
   const args: any[] = [];
+  let fromClause = 'products p';
 
+  // Use FTS5 for text search
   if (filters.search) {
-    whereClause += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
-    const searchTerm = `%${filters.search}%`;
-    args.push(searchTerm, searchTerm, searchTerm);
+    fromClause = 'products_fts JOIN products p ON products_fts.rowid = p.id';
+    whereClause = `products_fts MATCH ? AND p.discontinued = 0`;
+    args.push(filters.search);
   }
 
   if (filters.categories && filters.categories.length > 0) {
-    whereClause += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
+    whereClause += ` AND p.maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters.brands && filters.brands.length > 0) {
-    whereClause += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
+    whereClause += ` AND p.brand IN (${filters.brands.map(() => '?').join(',')})`;
     args.push(...filters.brands);
   }
 
   if (filters.colors && filters.colors.length > 0) {
-    whereClause += ` AND (color1 IN (${filters.colors.map(() => '?').join(',')})`;
-    whereClause += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
-    whereClause += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
-    whereClause += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
+    whereClause += ` AND (p.color1 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color2 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color3 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color4 IN (${filters.colors.map(() => '?').join(',')}))`;
     args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   if (filters.sizes && filters.sizes.length > 0) {
-    whereClause += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
+    whereClause += ` AND p.size IN (${filters.sizes.map(() => '?').join(',')})`;
     args.push(...filters.sizes);
   }
 
-  // Optimized query using CTE and leveraging idx_catalognr, idx_maincategory indices
+  // Count distinct catalognr (unique products)
+  const query = `
+    SELECT COUNT(DISTINCT p.catalognr) as count
+    FROM ${fromClause}
+    WHERE ${whereClause}
+  `;
+
+  const result = await client.execute({
+    sql: query,
+    args: args
+  });
+
+  return Number(result.rows[0]?.count || 0);
+}
+
+export async function searchProducts(filters: FilterOptions, limit = 20, offset = 0): Promise<ProductGroup[]> {
+  // Build WHERE clause for the subquery
+  let whereClause = 'p.discontinued = 0';
+  const args: any[] = [];
+  let fromClause = 'products p';
+
+  // Use FTS5 for text search - much faster than LIKE
+  if (filters.search) {
+    fromClause = 'products_fts JOIN products p ON products_fts.rowid = p.id';
+    whereClause = `products_fts MATCH ? AND p.discontinued = 0`;
+    args.push(filters.search);
+  }
+
+  if (filters.categories && filters.categories.length > 0) {
+    whereClause += ` AND p.maincategory IN (${filters.categories.map(() => '?').join(',')})`;
+    args.push(...filters.categories);
+  }
+
+  if (filters.brands && filters.brands.length > 0) {
+    whereClause += ` AND p.brand IN (${filters.brands.map(() => '?').join(',')})`;
+    args.push(...filters.brands);
+  }
+
+  if (filters.colors && filters.colors.length > 0) {
+    whereClause += ` AND (p.color1 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color2 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color3 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color4 IN (${filters.colors.map(() => '?').join(',')}))`;
+    args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
+  }
+
+  if (filters.sizes && filters.sizes.length > 0) {
+    whereClause += ` AND p.size IN (${filters.sizes.map(() => '?').join(',')})`;
+    args.push(...filters.sizes);
+  }
+
+  // Optimized query using CTE with FTS5 for fast text search
   // First get unique catalognrs, then join to get all variants
   const query = `
     WITH unique_products AS (
-      SELECT DISTINCT catalognr
-      FROM products
+      SELECT DISTINCT p.catalognr
+      FROM ${fromClause}
       WHERE ${whereClause}
-      ORDER BY catalognr
+      ORDER BY p.catalognr
       LIMIT ? OFFSET ?
     )
     SELECT
@@ -344,41 +397,41 @@ export async function getCategories(filters?: Partial<FilterOptions>): Promise<s
 
 // Internal function for getBrands
 async function getBrandsInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
-  // Optimized to use idx_brand index
-  let query = `
-    SELECT DISTINCT brand
-    FROM products
-    WHERE brand IS NOT NULL AND brand != '' AND discontinued = 0
-  `;
-
+  // Use FTS5 for text search
+  let fromClause = 'products p';
+  let whereClause = 'p.brand IS NOT NULL AND p.brand != \'\' AND p.discontinued = 0';
   const args: any[] = [];
 
   if (filters?.search) {
-    query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
-    const searchTerm = `%${filters.search}%`;
-    args.push(searchTerm, searchTerm, searchTerm);
+    fromClause = 'products_fts JOIN products p ON products_fts.rowid = p.id';
+    whereClause = `products_fts MATCH ? AND p.brand IS NOT NULL AND p.brand != '' AND p.discontinued = 0`;
+    args.push(filters.search);
   }
 
   if (filters?.categories && filters.categories.length > 0) {
-    // Using idx_maincategory index
-    query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
+    whereClause += ` AND p.maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters?.colors && filters.colors.length > 0) {
-    query += ` AND (color1 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
+    whereClause += ` AND (p.color1 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color2 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color3 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color4 IN (${filters.colors.map(() => '?').join(',')}))`;
     args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
   if (filters?.sizes && filters.sizes.length > 0) {
-    query += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
+    whereClause += ` AND p.size IN (${filters.sizes.map(() => '?').join(',')})`;
     args.push(...filters.sizes);
   }
 
-  query += ` ORDER BY brand`;
+  const query = `
+    SELECT DISTINCT p.brand
+    FROM ${fromClause}
+    WHERE ${whereClause}
+    ORDER BY p.brand
+  `;
 
   const result = await client.execute({
     sql: query,
@@ -409,40 +462,40 @@ export async function getBrands(filters?: Partial<FilterOptions>): Promise<strin
 
 // Internal function for getColors
 async function getColorsInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
-  let baseWhere = 'discontinued = 0';
+  // Use FTS5 for text search
+  let fromClause = 'products p';
+  let baseWhere = 'p.discontinued = 0';
   const args: any[] = [];
 
   if (filters?.search) {
-    baseWhere += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
-    const searchTerm = `%${filters.search}%`;
-    args.push(searchTerm, searchTerm, searchTerm);
+    fromClause = 'products_fts JOIN products p ON products_fts.rowid = p.id';
+    baseWhere = `products_fts MATCH ? AND p.discontinued = 0`;
+    args.push(filters.search);
   }
 
   if (filters?.categories && filters.categories.length > 0) {
-    // Using idx_maincategory index
-    baseWhere += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
+    baseWhere += ` AND p.maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
-    // Using idx_brand index
-    baseWhere += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
+    baseWhere += ` AND p.brand IN (${filters.brands.map(() => '?').join(',')})`;
     args.push(...filters.brands);
   }
 
   if (filters?.sizes && filters.sizes.length > 0) {
-    baseWhere += ` AND size IN (${filters.sizes.map(() => '?').join(',')})`;
+    baseWhere += ` AND p.size IN (${filters.sizes.map(() => '?').join(',')})`;
     args.push(...filters.sizes);
   }
 
   const query = `
-    SELECT DISTINCT color1 as color FROM products WHERE color1 IS NOT NULL AND color1 != '' AND ${baseWhere}
+    SELECT DISTINCT p.color1 as color FROM ${fromClause} WHERE p.color1 IS NOT NULL AND p.color1 != '' AND ${baseWhere}
     UNION
-    SELECT DISTINCT color2 as color FROM products WHERE color2 IS NOT NULL AND color2 != '' AND ${baseWhere}
+    SELECT DISTINCT p.color2 as color FROM ${fromClause} WHERE p.color2 IS NOT NULL AND p.color2 != '' AND ${baseWhere}
     UNION
-    SELECT DISTINCT color3 as color FROM products WHERE color3 IS NOT NULL AND color3 != '' AND ${baseWhere}
+    SELECT DISTINCT p.color3 as color FROM ${fromClause} WHERE p.color3 IS NOT NULL AND p.color3 != '' AND ${baseWhere}
     UNION
-    SELECT DISTINCT color4 as color FROM products WHERE color4 IS NOT NULL AND color4 != '' AND ${baseWhere}
+    SELECT DISTINCT p.color4 as color FROM ${fromClause} WHERE p.color4 IS NOT NULL AND p.color4 != '' AND ${baseWhere}
     ORDER BY color
   `;
 
@@ -477,41 +530,41 @@ export async function getColors(filters?: Partial<FilterOptions>): Promise<strin
 
 // Internal function for getSizes
 async function getSizesInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
-  let query = `
-    SELECT DISTINCT size
-    FROM products
-    WHERE size IS NOT NULL AND size != '' AND discontinued = 0
-  `;
-
+  // Use FTS5 for text search
+  let fromClause = 'products p';
+  let whereClause = 'p.size IS NOT NULL AND p.size != \'\' AND p.discontinued = 0';
   const args: any[] = [];
 
   if (filters?.search) {
-    query += ` AND (description LIKE ? OR longdescription LIKE ? OR brand LIKE ?)`;
-    const searchTerm = `%${filters.search}%`;
-    args.push(searchTerm, searchTerm, searchTerm);
+    fromClause = 'products_fts JOIN products p ON products_fts.rowid = p.id';
+    whereClause = `products_fts MATCH ? AND p.size IS NOT NULL AND p.size != '' AND p.discontinued = 0`;
+    args.push(filters.search);
   }
 
   if (filters?.categories && filters.categories.length > 0) {
-    // Using idx_maincategory index
-    query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
+    whereClause += ` AND p.maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
-    // Using idx_brand index
-    query += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
+    whereClause += ` AND p.brand IN (${filters.brands.map(() => '?').join(',')})`;
     args.push(...filters.brands);
   }
 
   if (filters?.colors && filters.colors.length > 0) {
-    query += ` AND (color1 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color2 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color3 IN (${filters.colors.map(() => '?').join(',')})`;
-    query += ` OR color4 IN (${filters.colors.map(() => '?').join(',')}))`;
+    whereClause += ` AND (p.color1 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color2 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color3 IN (${filters.colors.map(() => '?').join(',')})`;
+    whereClause += ` OR p.color4 IN (${filters.colors.map(() => '?').join(',')}))`;
     args.push(...filters.colors, ...filters.colors, ...filters.colors, ...filters.colors);
   }
 
-  query += ` ORDER BY size`;
+  const query = `
+    SELECT DISTINCT p.size
+    FROM ${fromClause}
+    WHERE ${whereClause}
+    ORDER BY p.size
+  `;
 
   const result = await client.execute({
     sql: query,

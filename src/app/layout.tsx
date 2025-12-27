@@ -16,32 +16,25 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="antialiased font-roboto">
-        <header>
+      <body className="antialiased">
+        <header className="bg-white pb-4">
           <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between">
-              <a href="/" className="hover:opacity-80 transition-opacity">
-                <img
-                  src="https://robimynadruki.pl/images/logo-robimynadruki.png"
-                  alt="RobiMyNadruki Logo"
-                  className="h-24"
-                />
-              </a>
-              <nav className="flex gap-8 text-gray-700">
-                <a href="/" className="hover:text-blue-600 transition-colors font-medium">
-                  Produkty
-                </a>
-              </nav>
-            </div>
+            <a href="/" className="hover:opacity-80 transition-opacity inline-block">
+              <img
+                src="https://robimynadruki.pl/images/logo-robimynadruki.png"
+                alt="RobiMyNadruki Logo"
+                className="h-24"
+              />
+            </a>
           </div>
         </header>
-        <main className="min-h-screen">
+        <main className="min-h-screen bg-white">
           {children}
         </main>
-        <footer className="bg-gray-800 text-white mt-12">
-          <div className="container mx-auto px-4 py-8">
+        <footer className="bg-[#112D4E] text-white mt-24">
+          <div className="container mx-auto px-4 py-12">
             <div className="text-center">
               <p>&copy; 2025 RobiMyNadruki. Wszystkie prawa zastrzeżone.</p>
             </div>

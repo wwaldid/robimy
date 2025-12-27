@@ -66,22 +66,17 @@ export default function ProductFilters({
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md relative">
-      {/* Loading overlay */}
-      {isPending && (
-        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-gray-600">Ładowanie...</span>
-          </div>
-        </div>
-      )}
-
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Filtry</h2>
+        <h2 className="text-xl font-bold flex items-center gap-2 text-[#112D4E]">
+          Filtry
+          {isPending && (
+            <div className="w-4 h-4 border-2 border-[#3F72AF] border-t-transparent rounded-full animate-spin" />
+          )}
+        </h2>
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800 underline"
+            className="text-sm text-[#3F72AF] hover:text-[#112D4E] underline disabled:opacity-50"
             disabled={isPending}
           >
             Wyczyść
