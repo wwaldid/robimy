@@ -68,6 +68,9 @@ export interface ProductGroup {
   maincategory: string | null;
   subcategory: string | null;
   material: string | null;
+  grammage?: string | null;
+  careinstruction?: string | null;
+  collections?: string | null;
   variants: ProductVariant[];
 }
 
