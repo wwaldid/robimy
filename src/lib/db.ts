@@ -206,41 +206,33 @@ export async function searchProducts(filters: FilterOptions, limit = 20, offset 
     args.push(...filters.sizes);
   }
 
-  // Single query with JOIN to get products + variants
+  // Optimized query using CTE and leveraging idx_catalognr, idx_maincategory indices
+  // First get unique catalognrs, then join to get all variants
   const query = `
-    SELECT
-      p1.catalognr,
-      p1.brand,
-      p1.description,
-      p1.longdescription,
-      p1.picturename,
-      p1.maincategory,
-      p1.subcategory,
-      p1.material,
-      p2.id as variant_id,
-      p2.color1 as variant_color,
-      p2.hexcol1 as variant_hex_color,
-      p2.size as variant_size
-    FROM (
-      SELECT DISTINCT
-        catalognr,
-        brand,
-        description,
-        longdescription,
-        picturename,
-        maincategory,
-        subcategory,
-        material
+    WITH unique_products AS (
+      SELECT DISTINCT catalognr
       FROM products
       WHERE ${whereClause}
-      GROUP BY catalognr
       ORDER BY catalognr
       LIMIT ? OFFSET ?
-    ) p1
-    LEFT JOIN products p2
-      ON p1.catalognr = p2.catalognr
-      AND p2.discontinued = 0
-    ORDER BY p1.catalognr, p2.color1, p2.size
+    )
+    SELECT
+      p.id as variant_id,
+      p.catalognr,
+      p.brand,
+      p.description,
+      p.longdescription,
+      p.picturename,
+      p.maincategory,
+      p.subcategory,
+      p.material,
+      p.color1 as variant_color,
+      p.hexcol1 as variant_hex_color,
+      p.size as variant_size
+    FROM unique_products up
+    JOIN products p ON up.catalognr = p.catalognr
+    WHERE p.discontinued = 0
+    ORDER BY p.catalognr, p.color1, p.size
   `;
 
   args.push(limit, offset);
@@ -350,7 +342,9 @@ export async function getCategories(filters?: Partial<FilterOptions>): Promise<s
   return getCategoriesInternal(filters);
 }
 
-export async function getBrands(filters?: Partial<FilterOptions>): Promise<string[]> {
+// Internal function for getBrands
+async function getBrandsInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
+  // Optimized to use idx_brand index
   let query = `
     SELECT DISTINCT brand
     FROM products
@@ -366,6 +360,7 @@ export async function getBrands(filters?: Partial<FilterOptions>): Promise<strin
   }
 
   if (filters?.categories && filters.categories.length > 0) {
+    // Using idx_maincategory index
     query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
@@ -390,11 +385,30 @@ export async function getBrands(filters?: Partial<FilterOptions>): Promise<strin
     args: args
   });
 
-  // Convert Row objects to plain objects and extract values
   return result.rows.map((row) => String(row.brand));
 }
 
-export async function getColors(filters?: Partial<FilterOptions>): Promise<string[]> {
+// Cached version for category-only filters
+const getBrandsCached = unstable_cache(
+  async (category: string) => getBrandsInternal({ categories: [category] }),
+  ['brands-by-category'],
+  {
+    revalidate: 3600,
+    tags: ['brands'],
+  }
+);
+
+export async function getBrands(filters?: Partial<FilterOptions>): Promise<string[]> {
+  // Use cache if only filtering by single category (common case)
+  if (filters?.categories?.length === 1 && !filters.search && !filters.colors && !filters.sizes) {
+    return getBrandsCached(filters.categories[0]);
+  }
+
+  return getBrandsInternal(filters);
+}
+
+// Internal function for getColors
+async function getColorsInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
   let baseWhere = 'discontinued = 0';
   const args: any[] = [];
 
@@ -405,11 +419,13 @@ export async function getColors(filters?: Partial<FilterOptions>): Promise<strin
   }
 
   if (filters?.categories && filters.categories.length > 0) {
+    // Using idx_maincategory index
     baseWhere += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
+    // Using idx_brand index
     baseWhere += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
     args.push(...filters.brands);
   }
@@ -437,11 +453,30 @@ export async function getColors(filters?: Partial<FilterOptions>): Promise<strin
     args: allArgs
   });
 
-  // Convert Row objects to plain objects and extract values
   return result.rows.map((row) => String(row.color));
 }
 
-export async function getSizes(filters?: Partial<FilterOptions>): Promise<string[]> {
+// Cached version for category-only filters
+const getColorsCached = unstable_cache(
+  async (category: string) => getColorsInternal({ categories: [category] }),
+  ['colors-by-category'],
+  {
+    revalidate: 3600,
+    tags: ['colors'],
+  }
+);
+
+export async function getColors(filters?: Partial<FilterOptions>): Promise<string[]> {
+  // Use cache if only filtering by single category (common case)
+  if (filters?.categories?.length === 1 && !filters.search && !filters.brands && !filters.sizes) {
+    return getColorsCached(filters.categories[0]);
+  }
+
+  return getColorsInternal(filters);
+}
+
+// Internal function for getSizes
+async function getSizesInternal(filters?: Partial<FilterOptions>): Promise<string[]> {
   let query = `
     SELECT DISTINCT size
     FROM products
@@ -457,11 +492,13 @@ export async function getSizes(filters?: Partial<FilterOptions>): Promise<string
   }
 
   if (filters?.categories && filters.categories.length > 0) {
+    // Using idx_maincategory index
     query += ` AND maincategory IN (${filters.categories.map(() => '?').join(',')})`;
     args.push(...filters.categories);
   }
 
   if (filters?.brands && filters.brands.length > 0) {
+    // Using idx_brand index
     query += ` AND brand IN (${filters.brands.map(() => '?').join(',')})`;
     args.push(...filters.brands);
   }
@@ -481,6 +518,24 @@ export async function getSizes(filters?: Partial<FilterOptions>): Promise<string
     args: args
   });
 
-  // Convert Row objects to plain objects and extract values
   return result.rows.map((row) => String(row.size));
+}
+
+// Cached version for category-only filters
+const getSizesCached = unstable_cache(
+  async (category: string) => getSizesInternal({ categories: [category] }),
+  ['sizes-by-category'],
+  {
+    revalidate: 3600,
+    tags: ['sizes'],
+  }
+);
+
+export async function getSizes(filters?: Partial<FilterOptions>): Promise<string[]> {
+  // Use cache if only filtering by single category (common case)
+  if (filters?.categories?.length === 1 && !filters.search && !filters.brands && !filters.colors) {
+    return getSizesCached(filters.categories[0]);
+  }
+
+  return getSizesInternal(filters);
 }
